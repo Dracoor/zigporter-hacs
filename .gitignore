@@ -94,11 +94,6 @@ ipython_config.py
 #   install all needed dependencies.
 # Pipfile.lock
 
-# UV
-#   For libraries/integrations, the lockfile is not shipped to users and only
-#   pins transitive deps for CI — omitting it avoids stale Dependabot alerts.
-uv.lock
-
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
