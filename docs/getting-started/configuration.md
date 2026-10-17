@@ -21,10 +21,10 @@ Click **Configure** on the Zigporter integration card to adjust settings.
 | MQTT topic | `zigbee2mqtt` | — | Topic prefix for Zigbee2MQTT |
 | Warning LQI | `50` | 1–255 | Links below this threshold show yellow |
 | Critical LQI | `20` | 1–255 | Links below this threshold show red |
-| Scan timeout | `600` | 60–600s | Maximum wait time for a network scan |
+| Scan timeout | `1000` | 60–1200s | Maximum wait time for a network scan |
 | Cache TTL | `0` | 0–3600s | Seconds before cached map expires (`0` = manual refresh only) |
-| Hop colors 1–4 | *(empty)* | Hex color | Custom ring gradient colors (see [Colors & theming](../guide/colors.md)) |
-| Hop opacity | `0.80` | 0.1–1.0 | Opacity of hop ring fills |
+| Hop colors 1–4 | *(built-in palette)* | Hex color | Custom ring gradient colors (see [Colors & theming](../guide/colors.md)) |
+| Hop opacity | `0.90` | 0.1–1.0 | Opacity of hop ring fills |
 
 !!! tip
     If you have both ZHA and Zigbee2MQTT running, you can switch between them in options to view either network — no need to remove and re-add the integration.
@@ -33,9 +33,10 @@ Click **Configure** on the Zigporter integration card to adjust settings.
 
 The card JS is registered automatically — no manual resource setup needed.
 
-### Adding the card (Panel view — recommended)
+### Adding the card
 
-The network map works best as a full-page card in a **Panel** view:
+!!! warning
+    The card must be added to its own **Panel** view. It is sized to fill the whole page and does not display correctly in Sections or Masonry views.
 
 1. Open your dashboard → **pencil icon** (top-right) → edit mode.
 2. Click the **+** tab to create a new view.
@@ -52,7 +53,3 @@ type: custom:zigporter-network-map-card
 |--------|---------|-------------|
 | `title` | `Zigbee Network Map` | Card header text |
 | `show_stats` | `true` | Show device count, hops, and scan duration |
-
-### Alternative layouts
-
-You can also add the card inside a Sections or Masonry view — it will just be smaller. The card uses `height: calc(100vh - 140px)` in Panel mode for full viewport coverage.
