@@ -6,20 +6,24 @@
         "description": "Configure the Zigbee backend for the network map.",
         "data": {
           "backend": "Zigbee backend",
-          "mqtt_topic": "MQTT topic prefix"
+          "mqtt_topic": "MQTT topic prefix",
+          "name": "Name (optional)"
         },
         "data_description": {
           "backend": "Select which Zigbee integration to use for topology data.",
-          "mqtt_topic": "MQTT topic prefix for Zigbee2MQTT (usually 'zigbee2mqtt')."
+          "mqtt_topic": "MQTT topic prefix for Zigbee2MQTT (usually 'zigbee2mqtt').",
+          "name": "Friendly name for this bridge, e.g. 'Building 1'. Shown as the card title. Can be renamed later."
         }
       }
     },
     "error": {
       "mqtt_not_configured": "MQTT integration is not set up. Zigbee2MQTT requires MQTT.",
-      "zha_not_configured": "ZHA integration is not set up."
+      "zha_not_configured": "ZHA integration is not set up.",
+      "topic_already_configured": "A Zigporter entry for this MQTT topic prefix already exists.",
+      "zha_already_configured": "ZHA is already configured in Zigporter. Only one ZHA entry is supported."
     },
     "abort": {
-      "already_configured": "Zigporter is already configured."
+      "already_configured": "This Zigporter setup is already configured."
     }
   },
   "options": {
@@ -50,13 +54,15 @@
           "hop_color_2": "Background color for the second hop ring (RRGGBB or #RRGGBB). Set all 4 or leave all empty for defaults.",
           "hop_color_3": "Background color for the third hop ring (RRGGBB or #RRGGBB). Set all 4 or leave all empty for defaults.",
           "hop_color_4": "Background color for the fourth hop ring (RRGGBB or #RRGGBB). Set all 4 or leave all empty for defaults.",
-          "hop_opacity": "Opacity of hop ring fills (0.1–1.0). Default: 0.80."
+          "hop_opacity": "Opacity of hop ring fills (0.1–1.0). Default: 0.90."
         }
       }
     },
     "error": {
       "incomplete_palette": "All 4 hop colors must be set, or leave all empty for defaults.",
-      "invalid_color": "Invalid color format. Use #RRGGBB (e.g. #FF8800)."
+      "invalid_color": "Invalid color format. Use #RRGGBB (e.g. #FF8800).",
+      "topic_already_configured": "A Zigporter entry for this MQTT topic prefix already exists.",
+      "zha_already_configured": "ZHA is already configured in Zigporter. Only one ZHA entry is supported."
     }
   }
 }
