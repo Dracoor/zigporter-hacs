@@ -35,6 +35,7 @@ from .const import (
     _resolve_backend,
 )
 from .network_map import (
+    apply_z2m_device_lqi,
     build_flat_zha_topology,
     build_routing_tree,
     build_zha_topology_from_devices,
@@ -428,6 +429,14 @@ async def _fetch_z2m_topology(
         ieee = n.get("ieeeAddr", "").lower()
         if ieee:
             nodes[ieee] = n
+
+    tracker = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("lqi_tracker")
+    device_lqi = tracker.lqi_by_name() if tracker is not None else {}
+    filled = apply_z2m_device_lqi(nodes, links, device_lqi)
+    if filled:
+        _LOGGER.debug("Filled %d end-device links from reported device LQI", filled)
+    if tracker is not None:
+        await tracker.async_save()
 
     return nodes, links
 
