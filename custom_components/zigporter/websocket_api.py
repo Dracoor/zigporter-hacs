@@ -1,6 +1,7 @@
 """WebSocket API for Zigporter — serves the network map SVG."""
 
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -431,12 +432,20 @@ async def _fetch_z2m_topology(
             nodes[ieee] = n
 
     tracker = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("lqi_tracker")
-    device_lqi = tracker.lqi_by_name() if tracker is not None else {}
-    filled = apply_z2m_device_lqi(nodes, links, device_lqi)
-    if filled:
-        _LOGGER.debug("Filled %d end-device links from reported device LQI", filled)
     if tracker is not None:
-        await tracker.async_save()
+        try:
+            patched_nodes = copy.deepcopy(nodes)
+            patched_links = copy.deepcopy(links)
+            filled = apply_z2m_device_lqi(patched_nodes, patched_links, tracker.lqi_by_name())
+            if filled:
+                _LOGGER.debug("Filled %d end-device links from reported device LQI", filled)
+            nodes, links = patched_nodes, patched_links
+            await tracker.async_save()
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Device LQI fallback failed; using the Zigbee2MQTT network map as reported",
+                exc_info=True,
+            )
 
     return nodes, links
 

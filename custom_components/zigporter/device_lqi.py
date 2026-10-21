@@ -14,7 +14,7 @@ the ZHA backend falls back to the device-level LQI ZHA keeps.
 import json
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 # Sub-topics Zigbee2MQTT uses for commands and status, never device state.
 _IGNORED_SUFFIXES = ("/set", "/get", "/availability")
 
+# Older values are ignored, so a dead or removed device does not keep a healthy LQI.
+MAX_AGE = timedelta(hours=24)
+
 
 class Z2MDeviceLqiTracker:
     """Remember the latest `linkquality` each Zigbee2MQTT device reported."""
@@ -35,6 +38,7 @@ class Z2MDeviceLqiTracker:
         self.topic_prefix = topic_prefix.strip("/")
         self._store_path = store_path
         self._unsub: Callable[[], None] | None = None
+        self._stopped = False
         # friendly_name -> {"lqi": int, "time": ISO timestamp}
         self.values: dict[str, dict[str, Any]] = {}
 
@@ -64,6 +68,7 @@ class Z2MDeviceLqiTracker:
 
     async def async_save(self) -> None:
         """Persist the current values next to the network map cache."""
+        self._prune()
         if not self._store_path or not self.values:
             return
         try:
@@ -75,19 +80,26 @@ class Z2MDeviceLqiTracker:
 
     async def async_start(self) -> None:
         """Subscribe to all device topics under the prefix."""
-        if self._unsub is not None:
+        if self._unsub is not None or self._stopped:
             return
         if not await mqtt.async_wait_for_mqtt_client(self._hass):
             _LOGGER.warning("MQTT not available; device LQI fallback is disabled")
             return
-        self._unsub = await mqtt.async_subscribe(
+        if self._stopped:
+            return
+        unsub = await mqtt.async_subscribe(
             self._hass, f"{self.topic_prefix}/#", self._on_message, qos=0
         )
+        if self._stopped:
+            unsub()
+            return
+        self._unsub = unsub
         _LOGGER.debug("Tracking device LQI on %s/#", self.topic_prefix)
 
     @callback
     def async_stop(self) -> None:
-        """Unsubscribe."""
+        """Unsubscribe, and stop a pending start from subscribing later."""
+        self._stopped = True
         if self._unsub is not None:
             self._unsub()
             self._unsub = None
@@ -128,8 +140,31 @@ class Z2MDeviceLqiTracker:
         return name
 
     def lqi_by_name(self) -> dict[str, int]:
-        """Return friendly_name -> last reported LQI."""
-        return {name: value["lqi"] for name, value in self.values.items()}
+        """Return friendly_name -> last reported LQI, ignoring values older than MAX_AGE."""
+        now = datetime.now(UTC)
+        return {
+            name: value["lqi"]
+            for name, value in self.values.items()
+            if _is_fresh(value.get("time"), now)
+        }
+
+    def _prune(self) -> None:
+        now = datetime.now(UTC)
+        self.values = {
+            name: value for name, value in self.values.items() if _is_fresh(value.get("time"), now)
+        }
+
+
+def _is_fresh(raw_time: Any, now: datetime) -> bool:
+    if not isinstance(raw_time, str):
+        return False
+    try:
+        stamp = datetime.fromisoformat(raw_time)
+    except ValueError:
+        return False
+    if stamp.tzinfo is None:
+        return False
+    return now - stamp <= MAX_AGE
 
 
 def _valid_lqi(value: Any) -> bool:

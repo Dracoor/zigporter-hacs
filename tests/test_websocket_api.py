@@ -1074,3 +1074,49 @@ class TestFetchZ2mDeviceLqiFallback:
 
         assert links[1]["lqi"] == 111
         tracker.async_save.assert_awaited_once()
+
+    async def test_fallback_failure_returns_original_topology(self, mock_hass, mock_entry):
+        tracker = MagicMock()
+        tracker.lqi_by_name = MagicMock(side_effect=RuntimeError("boom"))
+        tracker.async_save = AsyncMock()
+        mock_hass.data[DOMAIN][mock_entry.entry_id] = {"lqi_tracker": tracker}
+
+        z2m_payload = {
+            "data": {
+                "value": {
+                    "nodes": [
+                        {"ieeeAddr": "0x001", "friendlyName": "Coord", "type": "Coordinator"},
+                        {"ieeeAddr": "0x003", "friendlyName": "Door", "type": "EndDevice"},
+                    ],
+                    "links": [
+                        {
+                            "source": {"ieeeAddr": "0x003"},
+                            "target": {"ieeeAddr": "0x001"},
+                            "lqi": 0,
+                        },
+                    ],
+                }
+            }
+        }
+
+        async def mock_subscribe(hass, topic, callback, qos=0):
+            msg = MagicMock()
+            msg.payload = json.dumps(z2m_payload)
+            callback(msg)
+            return MagicMock()
+
+        with (
+            patch(
+                "custom_components.zigporter.websocket_api.mqtt.async_subscribe",
+                side_effect=mock_subscribe,
+            ),
+            patch(
+                "custom_components.zigporter.websocket_api.mqtt.async_publish",
+                new_callable=AsyncMock,
+            ),
+        ):
+            nodes, links = await _fetch_z2m_topology(mock_hass, mock_entry, timeout=10)
+
+        assert set(nodes) == {"0x001", "0x003"}
+        assert links[0]["lqi"] == 0
+        assert "lqi_source" not in links[0]

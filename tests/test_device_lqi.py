@@ -1,12 +1,15 @@
 """Tests for device_lqi.py — tracking the LQI Zigbee2MQTT reports per device."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.zigporter.device_lqi import (
+    MAX_AGE,
     Z2MDeviceLqiTracker,
+    _is_fresh,
     _read_text,
     _valid_lqi,
     _write_text,
@@ -82,6 +85,62 @@ class TestOnMessage:
 
 
 class TestStartStop:
+    async def test_stop_before_mqtt_ready_prevents_subscription(self, hass):
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", None)
+
+        async def stop_while_waiting(_hass):
+            tracker.async_stop()
+            return True
+
+        with (
+            patch(
+                "custom_components.zigporter.device_lqi.mqtt.async_wait_for_mqtt_client",
+                side_effect=stop_while_waiting,
+            ),
+            patch(
+                "custom_components.zigporter.device_lqi.mqtt.async_subscribe",
+                new_callable=AsyncMock,
+            ) as subscribe,
+        ):
+            await tracker.async_start()
+
+        subscribe.assert_not_awaited()
+        assert tracker._unsub is None
+
+    async def test_stop_during_subscribe_unsubscribes(self, hass):
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", None)
+        unsub = MagicMock()
+
+        async def stop_while_subscribing(*_args, **_kwargs):
+            tracker.async_stop()
+            return unsub
+
+        with (
+            patch(
+                "custom_components.zigporter.device_lqi.mqtt.async_wait_for_mqtt_client",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "custom_components.zigporter.device_lqi.mqtt.async_subscribe",
+                side_effect=stop_while_subscribing,
+            ),
+        ):
+            await tracker.async_start()
+
+        unsub.assert_called_once()
+        assert tracker._unsub is None
+
+    async def test_start_after_stop_is_noop(self, hass):
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", None)
+        tracker.async_stop()
+        with patch(
+            "custom_components.zigporter.device_lqi.mqtt.async_wait_for_mqtt_client",
+            new_callable=AsyncMock,
+        ) as wait:
+            await tracker.async_start()
+        wait.assert_not_awaited()
+
     async def test_start_subscribes_once(self, hass):
         tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt_acreage", None)
         unsub = MagicMock()
@@ -125,6 +184,39 @@ class TestStartStop:
         subscribe.assert_not_awaited()
 
 
+class TestExpiry:
+    def _stamp(self, age):
+        return (datetime.now(UTC) - age).isoformat()
+
+    def test_old_values_are_ignored(self, hass):
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", None)
+        tracker.values = {
+            "Fresh": {"lqi": 80, "time": self._stamp(MAX_AGE - timedelta(minutes=5))},
+            "Stale": {"lqi": 90, "time": self._stamp(MAX_AGE + timedelta(minutes=5))},
+        }
+        assert tracker.lqi_by_name() == {"Fresh": 80}
+
+    async def test_save_drops_stale_values(self, hass, tmp_path):
+        path = tmp_path / "device_lqi.json"
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", str(path))
+        tracker.values = {
+            "Fresh": {"lqi": 80, "time": self._stamp(timedelta(minutes=1))},
+            "Stale": {"lqi": 90, "time": self._stamp(MAX_AGE + timedelta(hours=1))},
+        }
+        await tracker.async_save()
+        assert list(json.loads(path.read_text())) == ["Fresh"]
+
+    async def test_save_skips_when_everything_is_stale(self, hass, tmp_path):
+        tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", str(tmp_path / "x.json"))
+        tracker.values = {"Stale": {"lqi": 90, "time": self._stamp(MAX_AGE + timedelta(hours=1))}}
+        await tracker.async_save()
+        hass.async_add_executor_job.assert_not_awaited()
+
+    @pytest.mark.parametrize("raw", [None, 123, "not a date", "2026-10-21T13:00:00"])
+    def test_unusable_timestamp_is_not_fresh(self, raw):
+        assert not _is_fresh(raw, datetime.now(UTC))
+
+
 class TestPersistence:
     async def test_save_and_load_roundtrip(self, hass, tmp_path):
         path = str(tmp_path / "sub" / "device_lqi.json")
@@ -138,7 +230,10 @@ class TestPersistence:
 
     async def test_load_drops_invalid_entries(self, hass, tmp_path):
         path = tmp_path / "device_lqi.json"
-        path.write_text(json.dumps({"A": {"lqi": 50}, "B": {"lqi": 0}, "C": 7}))
+        now = datetime.now(UTC).isoformat()
+        path.write_text(
+            json.dumps({"A": {"lqi": 50, "time": now}, "B": {"lqi": 0, "time": now}, "C": 7})
+        )
         tracker = Z2MDeviceLqiTracker(hass, "zigbee2mqtt", str(path))
         await tracker.async_load()
         assert tracker.lqi_by_name() == {"A": 50}
